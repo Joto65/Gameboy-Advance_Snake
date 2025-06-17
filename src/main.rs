@@ -19,5 +19,85 @@ extern crate alloc;
 // the #[agb::entry] macro.
 #[agb::entry]
 fn main(gba: agb::Gba) -> ! {
-    agb::no_game(gba);
+    game1(gba);
+}
+
+use agb::include_aseprite;
+use agb::display::object::Object;
+
+include_aseprite!(
+    mod sprites,
+    "gfx/snake_sprites.aseprite"
+);
+
+pub fn game1(mut gba: agb::Gba) -> !
+{
+    let mut gfx = gba.graphics.get();
+
+    let mut snake_head = Object::new(sprites::SNAKE_HEAD.sprite(0));
+    let mut snake_body_straight = Object::new(sprites::SNAKE_BODY_STRAIGHT.sprite(0));
+    let mut snake_body_turn = Object::new(sprites::SNAKE_BODY_TURN.sprite(0));
+    let mut snake_body_turn2 = Object::new(sprites::SNAKE_BODY_TURN.sprite(0));
+    let mut snake_body_end_v = Object::new(sprites::SNAKE_BODY_END_VERTICAL.sprite(0));
+    let mut snake_body_end_h = Object::new(sprites::SNAKE_BODY_END_HORIZONTAL.sprite(0));
+
+
+    let mut head_position_x = 112;
+    let mut head_position_y = 72;
+    let mut body_positions_x = [0; 100];
+    let mut body_positions_y = [0; 100];
+    body_positions_x[0] = 112;
+    body_positions_x[1] = 112;
+    body_positions_y[0] = 88;
+    body_positions_y[1] = 104;
+    let mut snake_length = 3;
+    let mut x_velocity = 0;
+    let mut y_velocity = -16;
+
+    let mut wait = 0;
+
+    snake_head.set_pos((head_position_x, head_position_y));
+    snake_body_straight.set_pos((body_positions_x[0], body_positions_y[0]));
+    snake_body_end_v.set_pos((body_positions_x[1], body_positions_y[1]));
+
+    loop {
+
+        if wait == 15 {
+            head_position_x = (head_position_x + x_velocity);
+            head_position_y = (head_position_y + y_velocity);
+
+            if head_position_x < 0 {
+                head_position_x = agb::display::WIDTH - 16;
+            } else if head_position_x > agb::display::WIDTH - 16 {
+                head_position_x = 0;
+            }
+            if head_position_y < 0 {
+                head_position_y = agb::display::HEIGHT - 16;
+            } else if head_position_y > agb::display::HEIGHT - 16 {
+                head_position_y = 0;
+            }
+
+            //temporary
+            snake_body_end_v.set_hflip((!snake_body_end_v.hflip()));
+            snake_body_end_v.set_pos(snake_body_straight.pos());
+            snake_body_straight.set_pos(snake_head.pos());
+
+
+            snake_head.set_pos((head_position_x, head_position_y));
+            wait = 0;
+        }
+        else {
+            wait += 1;
+        }
+
+
+        let mut frame = gfx.frame();
+
+        snake_head.show(&mut frame);
+        snake_body_straight.show(&mut frame);
+        snake_body_end_v.show(&mut frame);
+
+        frame.commit();
+
+    }
 }
