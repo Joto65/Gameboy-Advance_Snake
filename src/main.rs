@@ -22,22 +22,55 @@ fn main(gba: agb::Gba) -> ! {
     game1(gba);
 }
 
+use alloc::format;
 use agb::include_aseprite;
 use agb::display::object::Object;
 use agb::display::object::SpriteVram;
 use agb::fixnum::vec2;
 use agb::rng;
+use agb::include_background_gfx;
+use agb::display::tiled::VRAM_MANAGER;
+use agb::display::font::{Layout, AlignmentKind, Font, RegularBackgroundTextRenderer, ChangeColour};
+use agb::display::Rgb15;
 
 include_aseprite!(
             mod sprites,
             "gfx/snake_sprites.aseprite"
         );
 
+include_background_gfx!(
+    mod background,
+    GRASS_LAND => deduplicate "gfx/snake_background.aseprite",
+);
+
+static FONT: Font = agb::include_font!("fnt/SquareFont.ttf", 4);
+
 pub fn game1(mut gba: agb::Gba) -> !
 {
+    VRAM_MANAGER.set_background_palettes(background::PALETTES);
+    VRAM_MANAGER.set_background_palette_colour(0, 6, Rgb15::WHITE);
     //gba hardware access
     let mut gfx = gba.graphics.get();
     let mut input = agb::input::ButtonController::new();
+
+    use agb::display::{
+        Priority,
+        tiled::{RegularBackground, RegularBackgroundSize, TileFormat},
+    };
+
+    let mut bg = RegularBackground::new(
+        Priority::P3,
+        RegularBackgroundSize::Background32x32,
+        TileFormat::FourBpp
+    );
+
+    let mut bg_text = RegularBackground::new(
+        Priority::P2,
+        RegularBackgroundSize::Background32x32,
+        TileFormat::FourBpp,
+    );
+
+    bg.fill_with(&background::GRASS_LAND);
 
     //sprite list
     let snake_head_v = SpriteVram::from(sprites::SNAKE_HEAD_VERTICAL.sprite(0));
@@ -65,7 +98,7 @@ pub fn game1(mut gba: agb::Gba) -> !
 
     //snake objects
     let mut snake_head = Object::new(snake_head_v.clone());
-    let mut body = core::array::from_fn::<_, 119, _>(|_| Object::new(snake_body_straight_v.clone()));
+    let mut body = core::array::from_fn::<_, 130, _>(|_| Object::new(snake_body_straight_v.clone()));
 
     //set snake default position
     snake_head.set_pos((head_position_x, head_position_y));
@@ -74,6 +107,7 @@ pub fn game1(mut gba: agb::Gba) -> !
     body[1].set_pos((body_positions_x[1], body_positions_y[1]));
 
     //snake body orientations
+    #[derive(Copy, Clone, PartialEq)]
     enum BodySprites {
         StraightVertical,
         StraightHorizontal,
@@ -81,7 +115,7 @@ pub fn game1(mut gba: agb::Gba) -> !
     }
 
 
-    let mut snake_body_type = core::array::from_fn::<_, 119, _>(|_| BodySprites::StraightVertical);
+    let mut snake_body_type = core::array::from_fn::<_, 130, _>(|_| BodySprites::StraightVertical);
 
     let apple = SpriteVram::from(sprites::APPLE.sprite(0));
     let banana = SpriteVram::from(sprites::BANANA.sprite(0));
@@ -98,9 +132,24 @@ pub fn game1(mut gba: agb::Gba) -> !
     let mut fruits = core::array::from_fn::<_, 8, _>(|_| Object::new(fruit_list[0].clone()));
 
     let mut wait = 0;
+    let mut fruit_eaten = false;
+    let mut restart = false;
+    let mut score = format!("{}{:03}", ChangeColour::new(6), 0);
 
     loop {
         input.update();
+
+        let text_layout = Layout::new(
+            &score,
+            &FONT,
+            AlignmentKind::Centre,
+            16,
+            32,
+        );
+
+        let mut text_renderer = RegularBackgroundTextRenderer::new((208, 7));
+
+
         if wait == 15 { //4 times per second
             let turn; // player input
 
@@ -145,6 +194,13 @@ pub fn game1(mut gba: agb::Gba) -> !
                 head_position_y = 0;
             }
 
+            if fruit_eaten {
+                snake_length += 1;
+                snake_body_type[snake_length -1] = snake_body_type[snake_length -2];
+                body[snake_length -1] = body[snake_length -2].clone();
+            }
+
+            if restart {snake_length = 2; restart = false}
 
             for pos in (0..snake_length).rev() {
 
@@ -203,6 +259,9 @@ pub fn game1(mut gba: agb::Gba) -> !
                                 body[pos].set_hflip(body[pos -1].hflip());
                                 body[pos].set_vflip(!body[pos].vflip());
                             }
+                            if fruit_eaten {
+                                body[pos].set_vflip(!body[pos].vflip());
+                            }
                         }
                     };
                     body[pos].set_sprite(new_sprite);
@@ -237,6 +296,7 @@ pub fn game1(mut gba: agb::Gba) -> !
 
             snake_head.set_pos((head_position_x, head_position_y));
 
+            //fruit placement
             if fruit_amount == 0 {
                 fruit_amount = rng::next_i32().rem_euclid(8);
                 agb::println!("{fruit_amount}");
@@ -248,6 +308,12 @@ pub fn game1(mut gba: agb::Gba) -> !
                         let xpos = rng::next_i32().rem_euclid(14) * 16;
                         let ypos = rng::next_i32().rem_euclid(9) * 16;
                         let mut free = true;
+                        for pos in 0..fruit {
+                            if fruits[pos as usize].pos() == vec2(xpos, ypos) {
+                                free = false;
+                                break;
+                            }
+                        }
                         if snake_head.pos() != vec2(xpos, ypos) {
                             for pos in 0..snake_length {
                                 if body[pos].pos() == vec2(xpos, ypos) {
@@ -264,12 +330,30 @@ pub fn game1(mut gba: agb::Gba) -> !
                 }
 
             }
+
+            //check if snake collided
+            for pos in 0..snake_length {
+                if snake_head.pos() == body[pos].pos() {
+                    restart = true;
+                }
+            }
+
+            fruit_eaten = false;
+            //check if fruit eaten
+            for fruit in 0..fruit_amount {
+                if snake_head.pos() == fruits[fruit as usize].pos() {
+                    fruits[fruit as usize] = fruits[fruit_amount as usize -1].clone();
+                    fruit_amount = fruit_amount -1;
+                    if snake_length < 120 { fruit_eaten = true;}
+                }
+            }
+            score = format!("{}{:03}", ChangeColour::new(6), snake_length -2);
+
             wait = 0;
         }
         else {
             wait += 1;
         }
-
 
         let mut frame = gfx.frame();
 
@@ -282,8 +366,11 @@ pub fn game1(mut gba: agb::Gba) -> !
             fruits[fruit as usize].show(&mut frame);
         }
 
-
-
+        for letter in text_layout {
+            text_renderer.show(&mut bg_text, &letter);
+        }
+        bg.show(&mut frame);
+        bg_text.show(&mut frame);
         frame.commit();
 
         //make rng harder to predict
