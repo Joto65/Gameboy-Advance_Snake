@@ -17,7 +17,7 @@ rustdocflags = [
     "-Cforce-frame-pointers=yes",
 ]
 
-runner = ["mGBA.exe", "-C", "logToStdout=1", "-C", "logLevel.gba.debug=127"]
+runner = ["mgba-qt", "-C", "logToStdout=1", "-C", "logLevel.gba.debug=127"]
 
 [target.armv4t-none-eabi]
 rustflags = [
@@ -31,4 +31,4 @@ rustdocflags = [
     "-Cforce-frame-pointers=yes",
 ]
 
-runner = ["mGBA.exe", "-C", "logToStdout=1", "-C", "logLevel.gba.debug=127"]
+runner = ["mgba-qt", "-C", "logToStdout=1", "-C", "logLevel.gba.debug=127"]
